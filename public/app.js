@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const newListNameInput = document.getElementById('new-list-name');
     const newListTimezoneInput = document.getElementById('new-list-timezone');
     const listNameHeader = document.getElementById('list-name-header');
+    const listTimezoneInfo = document.getElementById('list-timezone-info');
     const tasksContainer = document.getElementById('tasks-container');
     const addTaskButton = document.getElementById('add-task-button');
     const newTaskDescriptionInput = document.getElementById('new-task-description');
@@ -37,6 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentUser: null,
         currentView: 'login', // 'login', 'lists', 'detail'
         currentListId: null,
+        currentListTimezone: null,
         lists: [],
         tasks: [],
         isLoading: true,
@@ -88,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Render Tasks
         if (state.currentView === 'detail') {
             listNameHeader.textContent = state.lists.find(l => l.id === state.currentListId)?.name || 'List';
+            listTimezoneInfo.textContent = `Timezone: ${state.currentListTimezone || 'Loading...'}`;
             tasksContainer.innerHTML = '';
             const sortedTasks = [...state.tasks].sort((a, b) => a.status - b.status);
             if (sortedTasks.length === 0) {
@@ -155,10 +158,12 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const result = await getRoutineListDetails({ listId });
             state.tasks = result.data.tasks || [];
+            state.currentListTimezone = result.data.timezone;
         } catch (error) {
             console.error("Error fetching tasks:", error);
             alert("Could not fetch tasks for this list.");
             state.tasks = [];
+            state.currentListTimezone = null;
             navigate('/'); // Go back if there's an error
         }
     }
@@ -194,12 +199,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     createListButton.addEventListener('click', async () => {
         const name = newListNameInput.value.trim();
-        const timezone = newListTimezoneInput.value.trim();
-        if (!name || !timezone) return alert("Please provide a name and timezone.");
+        if (!name) return alert("Please provide a name for the list.");
+        
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
         try {
             await createRoutineList({ name, timezone });
             newListNameInput.value = '';
-            newListTimezoneInput.value = '';
             await fetchLists();
             render();
         } catch (error) {
