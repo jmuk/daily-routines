@@ -4,6 +4,8 @@ import { getAuth } from "firebase-admin/auth";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
+import { v4 as uuidv4 } from "uuid";
+import { utcToZonedTime, format } from "date-fns-tz";
 
 // Initialize Firebase Admin SDK
 initializeApp();
@@ -105,7 +107,7 @@ export const addTask = onCall(async (request) => {
   }
 
   const newTask = {
-    id: Date.now().toString(), // Simple unique ID
+    id: uuidv4(), // Generate a v4 UUID
     description,
     status: false,
     refreshTime, // e.g., "06:00"
@@ -197,8 +199,7 @@ export const inviteAdmin = onCall(async (request) => {
 export const dailyReset = onSchedule("every 1 hours", async () => {
     logger.info("Running daily reset check...");
 
-    const now = new Date();
-
+    const nowUtc = new Date();
 
     const listsSnapshot = await db.collection("routine_lists").get();
     if (listsSnapshot.empty) {
@@ -209,32 +210,30 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
     for (const doc of listsSnapshot.docs) {
         const list = doc.data();
         const listRef = doc.ref;
+        const timezone = list.timezone || "UTC"; // Default to UTC if no timezone
 
-        // Simple check: if the refresh time matches the current hour, reset.
-        // A more robust solution would use a library to handle timezones correctly.
-        // For this version, we assume refreshTime is in the user's local time
-        // and we just check if the hour matches. This is a simplification.
-        const tasksToReset = list.tasks.filter((task: any) => {
-            const [taskHour] = task.refreshTime.split(':').map(Number);
-            // This is a naive check. A better implementation would use a library
-            // to convert the list's timezone to the current UTC hour.
-            // For now, we'll just reset if the hour matches in any timezone.
-            // This is a known limitation of this implementation.
-            return task.status === true && taskHour === now.getHours();
-        });
+        try {
+            const nowInListTimezone = utcToZonedTime(nowUtc, timezone);
+            const currentHourInListTimezone = parseInt(format(nowInListTimezone, 'HH', { timeZone: timezone }));
 
-
-        if (tasksToReset.length > 0) {
+            let needsUpdate = false;
             const newTasks = list.tasks.map((task: any) => {
-                const [taskHour] = task.refreshTime.split(':').map(Number);
-                if (task.status === true && taskHour === now.getHours()) {
-                    return { ...task, status: false };
+                if (task.status === true) {
+                    const [taskHour] = task.refreshTime.split(':').map(Number);
+                    if (taskHour === currentHourInListTimezone) {
+                        needsUpdate = true;
+                        return { ...task, status: false };
+                    }
                 }
                 return task;
             });
 
-            await listRef.update({ tasks: newTasks });
-            logger.info(`Reset ${tasksToReset.length} tasks for list ${doc.id}`);
+            if (needsUpdate) {
+                await listRef.update({ tasks: newTasks });
+                logger.info(`Reset tasks for list ${doc.id} in timezone ${timezone}`);
+            }
+        } catch (error) {
+            logger.error(`Failed to process list ${doc.id} with timezone ${timezone}.`, error);
         }
     }
     logger.info("Daily reset check finished.");

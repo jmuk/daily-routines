@@ -33,8 +33,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const backToListsButton = document.getElementById('back-to-lists');
 
     // --- App State ---
-    let currentUser = null;
-    let currentListId = null;
+    let state = {
+        currentUser: null,
+        currentView: 'login', // 'login', 'lists', 'detail'
+        currentListId: null,
+        lists: [],
+        tasks: [],
+        isLoading: true,
+    };
 
     // --- Firebase Function Callers ---
     const getRoutineLists = functions.httpsCallable('getRoutineLists');
@@ -44,51 +50,132 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateTaskStatus = functions.httpsCallable('updateTaskStatus');
     const inviteAdmin = functions.httpsCallable('inviteAdmin');
 
-    // --- Routing ---
-    function handleRouting() {
-        if (!currentUser) {
-            showLoginView();
+    // --- Main Render Function ---
+    function render() {
+        // Render Auth State
+        if (state.currentUser) {
+            userInfo.textContent = `Welcome, ${state.currentUser.displayName}`;
+            userInfo.style.display = 'block';
+            signInButton.style.display = 'none';
+            signOutButton.style.display = 'block';
+        } else {
+            userInfo.style.display = 'none';
+            signInButton.style.display = 'block';
+            signOutButton.style.display = 'none';
+        }
+
+        // Render Views
+        loginView.style.display = state.currentView === 'login' ? 'block' : 'none';
+        listsView.style.display = state.currentView === 'lists' ? 'block' : 'none';
+        detailView.style.display = state.currentView === 'detail' ? 'block' : 'none';
+
+        // Render Lists
+        if (state.currentView === 'lists') {
+            routineListsContainer.innerHTML = '';
+            if (state.lists.length === 0) {
+                routineListsContainer.innerHTML = '<p>No routine lists found. Create one below!</p>';
+            } else {
+                state.lists.forEach(list => {
+                    const listItem = document.createElement('div');
+                    listItem.className = 'list-item';
+                    listItem.textContent = list.name;
+                    listItem.onclick = () => navigate(`/list/${list.id}`);
+                    routineListsContainer.appendChild(listItem);
+                });
+            }
+        }
+
+        // Render Tasks
+        if (state.currentView === 'detail') {
+            listNameHeader.textContent = state.lists.find(l => l.id === state.currentListId)?.name || 'List';
+            tasksContainer.innerHTML = '';
+            const sortedTasks = [...state.tasks].sort((a, b) => a.status - b.status);
+            if (sortedTasks.length === 0) {
+                tasksContainer.innerHTML = '<p>No tasks in this list. Add one below!</p>';
+            } else {
+                sortedTasks.forEach(task => {
+                    const taskItem = document.createElement('div');
+                    taskItem.className = `task-item ${task.status ? 'completed' : ''}`;
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = task.status;
+                    checkbox.onchange = () => handleTaskStatusChange(state.currentListId, task.id, checkbox.checked);
+                    const description = document.createElement('span');
+                    description.className = 'task-description';
+                    description.textContent = `${task.description} (Resets at ${task.refreshTime})`;
+                    taskItem.appendChild(checkbox);
+                    taskItem.appendChild(description);
+                    tasksContainer.appendChild(taskItem);
+                });
+            }
+        }
+    }
+
+    // --- Navigation and Routing ---
+    function navigate(path) {
+        window.location.hash = path;
+    }
+
+    async function handleRouting() {
+        if (!state.currentUser) {
+            state.currentView = 'login';
+            render();
             return;
         }
 
         const hash = window.location.hash;
         if (hash.startsWith('#/list/')) {
             const listId = hash.substring('#/list/'.length);
-            showDetailView(listId);
+            state.currentView = 'detail';
+            state.currentListId = listId;
+            await fetchTasks(listId);
         } else {
-            showListsView();
+            state.currentView = 'lists';
+            state.currentListId = null;
+            await fetchLists();
         }
+        render();
     }
 
     window.addEventListener('hashchange', handleRouting);
 
+    // --- Data Fetching ---
+    async function fetchLists() {
+        try {
+            const result = await getRoutineLists();
+            state.lists = result.data;
+        } catch (error) {
+            console.error("Error fetching routine lists:", error);
+            alert("Could not fetch your routine lists.");
+            state.lists = [];
+        }
+    }
+
+    async function fetchTasks(listId) {
+        try {
+            const result = await getRoutineListDetails({ listId });
+            state.tasks = result.data.tasks || [];
+        } catch (error) {
+            console.error("Error fetching tasks:", error);
+            alert("Could not fetch tasks for this list.");
+            state.tasks = [];
+            navigate('/'); // Go back if there's an error
+        }
+    }
+
     // --- Authentication Logic ---
     if (isLocal) {
         console.log("Emulator detected. Simulating user login as admin@example.com");
-        currentUser = {
+        state.currentUser = {
             displayName: "Admin (Local)",
             email: "admin@example.com",
             uid: "fake-admin-uid"
         };
-        userInfo.textContent = `Welcome, ${currentUser.displayName}`;
-        userInfo.style.display = 'block';
-        signInButton.style.display = 'none';
-        signOutButton.style.display = 'none';
-        handleRouting(); // Start routing after fake login
+        handleRouting();
     } else {
         auth.onAuthStateChanged(user => {
-            currentUser = user;
-            if (user) {
-                userInfo.textContent = `Welcome, ${user.displayName}`;
-                userInfo.style.display = 'block';
-                signInButton.style.display = 'none';
-                signOutButton.style.display = 'block';
-            } else {
-                userInfo.style.display = 'none';
-                signInButton.style.display = 'block';
-                signOutButton.style.display = 'none';
-            }
-            handleRouting(); // Start routing after auth state is known
+            state.currentUser = user;
+            handleRouting();
         });
 
         signInButton.addEventListener('click', () => {
@@ -102,110 +189,19 @@ document.addEventListener('DOMContentLoaded', () => {
         signOutButton.addEventListener('click', () => auth.signOut());
     }
 
-    // --- UI Navigation ---
-    function showLoginView() {
-        loginView.style.display = 'block';
-        listsView.style.display = 'none';
-        detailView.style.display = 'none';
-    }
-
-    async function showListsView() {
-        window.location.hash = '';
-        loginView.style.display = 'none';
-        detailView.style.display = 'none';
-        listsView.style.display = 'block';
-        await renderRoutineLists();
-    }
-
-    async function showDetailView(listId) {
-        loginView.style.display = 'none';
-        listsView.style.display = 'none';
-        detailView.style.display = 'block';
-        currentListId = listId;
-        
-        // Set URL hash without triggering hashchange
-        if (window.location.hash !== `#/list/${listId}`) {
-            history.pushState(null, '', `#/list/${listId}`);
-        }
-
-        await renderTasks(listId);
-    }
-
-    backToListsButton.addEventListener('click', showListsView);
-
-    // --- Rendering Logic ---
-    async function renderRoutineLists() {
-        try {
-            const result = await getRoutineLists();
-            routineListsContainer.innerHTML = '';
-            if (result.data.length === 0) {
-                routineListsContainer.innerHTML = '<p>No routine lists found. Create one below!</p>';
-                return;
-            }
-            result.data.forEach(list => {
-                const listItem = document.createElement('div');
-                listItem.className = 'list-item';
-                listItem.textContent = list.name;
-                listItem.onclick = () => {
-                    // Navigate by changing hash, which triggers handleRouting
-                    window.location.hash = `#/list/${list.id}`;
-                };
-                routineListsContainer.appendChild(listItem);
-            });
-        } catch (error) {
-            console.error("Error fetching routine lists:", error);
-            alert("Could not fetch your routine lists.");
-        }
-    }
-
-    async function renderTasks(listId) {
-        try {
-            const result = await getRoutineListDetails({ listId });
-            const listData = result.data;
-            listNameHeader.textContent = listData.name;
-            tasksContainer.innerHTML = '';
-            const tasks = listData.tasks || [];
-            tasks.sort((a, b) => a.status - b.status);
-
-            if (tasks.length === 0) {
-                tasksContainer.innerHTML = '<p>No tasks in this list. Add one below!</p>';
-                return;
-            }
-
-            tasks.forEach(task => {
-                const taskItem = document.createElement('div');
-                taskItem.className = `task-item ${task.status ? 'completed' : ''}`;
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.checked = task.status;
-                checkbox.onchange = () => handleTaskStatusChange(listId, task.id, checkbox.checked);
-                const description = document.createElement('span');
-                description.className = 'task-description';
-                description.textContent = `${task.description} (Resets at ${task.refreshTime})`;
-                taskItem.appendChild(checkbox);
-                taskItem.appendChild(description);
-                tasksContainer.appendChild(taskItem);
-            });
-        } catch (error) {
-            console.error("Error fetching tasks:", error);
-            alert("Could not fetch tasks for this list.");
-            showListsView(); // Go back if there's an error
-        }
-    }
-
     // --- Event Handlers ---
+    backToListsButton.addEventListener('click', () => navigate('/'));
+
     createListButton.addEventListener('click', async () => {
         const name = newListNameInput.value.trim();
         const timezone = newListTimezoneInput.value.trim();
-        if (!name || !timezone) {
-            alert("Please provide a name and timezone for the new list.");
-            return;
-        }
+        if (!name || !timezone) return alert("Please provide a name and timezone.");
         try {
             await createRoutineList({ name, timezone });
             newListNameInput.value = '';
             newListTimezoneInput.value = '';
-            await renderRoutineLists();
+            await fetchLists();
+            render();
         } catch (error) {
             console.error("Error creating list:", error);
             alert("Failed to create list.");
@@ -215,15 +211,13 @@ document.addEventListener('DOMContentLoaded', () => {
     addTaskButton.addEventListener('click', async () => {
         const description = newTaskDescriptionInput.value.trim();
         const refreshTime = newTaskRefreshTimeInput.value.trim();
-        if (!description || !refreshTime) {
-            alert("Please provide a description and refresh time for the new task.");
-            return;
-        }
+        if (!description || !refreshTime) return alert("Please provide a description and refresh time.");
         try {
-            await addTask({ listId: currentListId, description, refreshTime });
+            await addTask({ listId: state.currentListId, description, refreshTime });
             newTaskDescriptionInput.value = '';
             newTaskRefreshTimeInput.value = '';
-            await renderTasks(currentListId);
+            await fetchTasks(state.currentListId);
+            render();
         } catch (error) {
             console.error("Error adding task:", error);
             alert("Failed to add task.");
@@ -233,7 +227,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleTaskStatusChange(listId, taskId, status) {
         try {
             await updateTaskStatus({ listId, taskId, status });
-            await renderTasks(listId);
+            const task = state.tasks.find(t => t.id === taskId);
+            if (task) task.status = status;
+            render();
         } catch (error) {
             console.error("Error updating task status:", error);
             alert("Failed to update task status.");
@@ -242,12 +238,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     inviteAdminButton.addEventListener('click', async () => {
         const email = inviteAdminEmailInput.value.trim();
-        if (!email) {
-            alert("Please enter an email to invite.");
-            return;
-        }
+        if (!email) return alert("Please enter an email to invite.");
         try {
-            await inviteAdmin({ listId: currentListId, email });
+            await inviteAdmin({ listId: state.currentListId, email });
             inviteAdminEmailInput.value = '';
             alert("Invitation sent successfully!");
         } catch (error) {

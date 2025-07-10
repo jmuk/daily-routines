@@ -4,22 +4,41 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper function to check if a user is an admin of a list
-    function isListAdmin(listId, userId) {
-      return get(/databases/$(database)/documents/routine_lists/$(listId)).data.admins.hasAny([userId]);
+    function isListAdmin(listId) {
+      return get(/databases/$(database)/documents/routine_lists/$(listId)).data.admins.hasAny([request.auth.uid]);
+    }
+
+    // Helper function to check if the user is the sole admin
+    function isSoleAdmin() {
+      return resource.data.admins.size() == 1 && resource.data.admins[0] == request.auth.uid;
     }
 
     // Rules for the 'routine_lists' collection
     match /routine_lists/{listId} {
 
       // READ: Allow read access only to admins of the list.
-      allow read: if request.auth != null && isListAdmin(listId, request.auth.uid);
+      allow read: if request.auth != null && isListAdmin(listId);
 
       // CREATE: Any authenticated user can create a new list.
-      // The function logic ensures the creator becomes the first admin.
-      allow create: if request.auth != null;
+      // The creator must be the first and only admin.
+      allow create: if request.auth != null &&
+                      request.resource.data.admins.size() == 1 &&
+                      request.resource.data.admins[0] == request.auth.uid;
 
-      // UPDATE, DELETE: Allow write access only to admins of the list.
-      allow write: if request.auth != null && isListAdmin(listId, request.auth.uid);
+      // UPDATE: Allow updates only by admins.
+      // Admins can be updated, but not removed by other admins.
+      // Tasks can be freely updated.
+      allow update: if request.auth != null && isListAdmin(listId) &&
+                      // Ensure the name and timezone are not changed arbitrarily
+                      request.resource.data.name == resource.data.name &&
+                      request.resource.data.timezone == resource.data.timezone &&
+                      // Allow admins list to grow, but not shrink unless you are the one leaving.
+                      (request.resource.data.admins.hasAll(resource.data.admins) ||
+                       isSoleAdmin() == false && resource.data.admins.removeAll(request.resource.data.admins).hasOnly([request.auth.uid]));
+
+
+      // DELETE: Allow deletion only if the user is an admin.
+      allow delete: if request.auth != null && isListAdmin(listId);
     }
   }
 }
