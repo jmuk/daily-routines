@@ -1,0 +1,139 @@
+/* General Body Styles */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #f4f7f6;
+    color: #333;
+    margin: 0;
+    line-height: 1.6;
+}
+
+/* Header */
+header {
+    background-color: #ffffff;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #007bff;
+}
+
+/* Main Content */
+main {
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+section {
+    background: #ffffff;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+}
+
+h2 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 2px solid #007bff;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Buttons */
+button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+button#back-to-lists {
+    background-color: #6c757d;
+    margin-bottom: 1rem;
+}
+
+button#back-to-lists:hover {
+    background-color: #5a6268;
+}
+
+.auth-button {
+    background-color: #28a745;
+}
+
+.auth-button:hover {
+    background-color: #218838;
+}
+
+/* Forms */
+.form-container {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e0e0e0;
+}
+
+.form-container h3 {
+    margin-top: 0;
+}
+
+input[type="text"], input[type="email"] {
+    width: calc(100% - 20px);
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 1rem;
+}
+
+/* Routine and Task Containers */
+#routine-lists-container .list-item, #tasks-container .task-item {
+    padding: 1rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#routine-lists-container .list-item:hover {
+    background-color: #f8f9fa;
+}
+
+.task-item .task-description {
+    flex-grow: 1;
+}
+
+.task-item.completed .task-description {
+    text-decoration: line-through;
+    color: #888;
+}
+
+.task-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-right: 1rem;
+}
+
+/* User Info */
+#user-info {
+    font-weight: bold;
+    color: #555;
+}

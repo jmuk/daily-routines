@@ -1,32 +1,241 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * import {onCall} from "firebase-functions/v2/https";
- * import {onDocumentWritten} from "firebase-functions/v2/firestore";
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
-
-import {setGlobalOptions} from "firebase-functions";
-import {onRequest} from "firebase-functions/https";
+import { initializeApp } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 
-// Start writing functions
-// https://firebase.google.com/docs/functions/typescript
+// Initialize Firebase Admin SDK
+initializeApp();
+const db = getFirestore();
+const auth = getAuth();
 
-// For cost control, you can set the maximum number of containers that can be
-// running at the same time. This helps mitigate the impact of unexpected
-// traffic spikes by instead downgrading performance. This limit is a
-// per-function limit. You can override the limit for each function using the
-// `maxInstances` option in the function's options, e.g.
-// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
-// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
-// functions should each use functions.runWith({ maxInstances: 10 }) instead.
-// In the v1 API, each function can only serve one request per container, so
-// this will be the maximum concurrent request count.
-setGlobalOptions({ maxInstances: 10 });
+const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 
-// export const helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+// Helper to get UID, faking it for the emulator if necessary
+function getUid(request: any): string {
+    let uid = request.auth?.uid;
+    if (isEmulator && !uid) {
+        logger.warn("EMULATOR MODE: Faking UID for request.");
+        return "fake-admin-uid";
+    }
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    return uid;
+}
+
+
+// --- Callable Functions ---
+
+/**
+ * Creates a new routine list for the authenticated user.
+ */
+export const createRoutineList = onCall(async (request) => {
+  const uid = getUid(request);
+
+  const { name, timezone } = request.data;
+  if (!name || !timezone) {
+    throw new HttpsError("invalid-argument", "Name and timezone are required.");
+  }
+
+  const newList = {
+    name,
+    timezone,
+    admins: [uid], // The creator is the first admin
+    tasks: [],
+  };
+
+  const listRef = await db.collection("routine_lists").add(newList);
+  logger.info(`New list created by ${uid} with ID: ${listRef.id}`);
+  return { listId: listRef.id };
+});
+
+/**
+ * Fetches all routine lists where the current user is an admin.
+ */
+export const getRoutineLists = onCall(async (request) => {
+  const uid = getUid(request);
+  const snapshot = await db.collection("routine_lists").where("admins", "array-contains", uid).get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+});
+
+/**
+ * Fetches the details of a single routine list.
+ */
+export const getRoutineListDetails = onCall(async (request) => {
+    const uid = getUid(request);
+
+    const { listId } = request.data;
+    if (!listId) {
+        throw new HttpsError("invalid-argument", "The 'listId' argument is required.");
+    }
+
+    const listDoc = await db.collection("routine_lists").doc(listId).get();
+    if (!listDoc.exists) {
+        throw new HttpsError("not-found", "The specified list does not exist.");
+    }
+
+    const listData = listDoc.data();
+    if (!listData?.admins.includes(uid)) {
+        throw new HttpsError("permission-denied", "You are not an admin of this list.");
+    }
+
+    return { id: listDoc.id, ...listData };
+});
+
+
+/**
+ * Adds a new task to a specified routine list.
+ */
+export const addTask = onCall(async (request) => {
+  const uid = getUid(request);
+
+  const { listId, description, refreshTime } = request.data;
+  if (!listId || !description || !refreshTime) {
+    throw new HttpsError("invalid-argument", "listId, description, and refreshTime are required.");
+  }
+
+  const listRef = db.collection("routine_lists").doc(listId);
+  const listDoc = await listRef.get();
+  const listData = listDoc.data();
+
+  if (!listData || !listData.admins.includes(uid)) {
+    throw new HttpsError("permission-denied", "You are not an admin of this list.");
+  }
+
+  const newTask = {
+    id: Date.now().toString(), // Simple unique ID
+    description,
+    status: false,
+    refreshTime, // e.g., "06:00"
+  };
+
+  await listRef.update({
+    tasks: FieldValue.arrayUnion(newTask),
+  });
+
+  logger.info(`Task added to list ${listId} by ${uid}`);
+  return { taskId: newTask.id };
+});
+
+/**
+ * Updates the status of a task in a routine list.
+ */
+export const updateTaskStatus = onCall(async (request) => {
+  const uid = getUid(request);
+
+  const { listId, taskId, status } = request.data;
+  if (!listId || !taskId || typeof status !== "boolean") {
+    throw new HttpsError("invalid-argument", "listId, taskId, and a boolean status are required.");
+  }
+
+  const listRef = db.collection("routine_lists").doc(listId);
+  const listDoc = await listRef.get();
+  const listData = listDoc.data();
+
+  if (!listData || !listData.admins.includes(uid)) {
+    throw new HttpsError("permission-denied", "You are not an admin of this list.");
+  }
+
+  const newTasks = listData.tasks.map((task: any) => {
+    if (task.id === taskId) {
+      return { ...task, status };
+    }
+    return task;
+  });
+
+  await listRef.update({ tasks: newTasks });
+  logger.info(`Task ${taskId} in list ${listId} updated by ${uid}`);
+  return { success: true };
+});
+
+/**
+ * Invites another user to become an admin of a list.
+ */
+export const inviteAdmin = onCall(async (request) => {
+  const uid = getUid(request);
+
+  const { listId, email } = request.data;
+  if (!listId || !email) {
+    throw new HttpsError("invalid-argument", "listId and email are required.");
+  }
+
+  const listRef = db.collection("routine_lists").doc(listId);
+  const listDoc = await listRef.get();
+  const listData = listDoc.data();
+
+  if (!listData || !listData.admins.includes(uid)) {
+    throw new HttpsError("permission-denied", "You are not an admin of this list.");
+  }
+
+  // Find the user by email
+  try {
+    const userRecord = await auth.getUserByEmail(email);
+    const newAdminUid = userRecord.uid;
+
+    if (listData.admins.includes(newAdminUid)) {
+        throw new HttpsError("already-exists", "This user is already an admin.");
+    }
+
+    await listRef.update({
+      admins: FieldValue.arrayUnion(newAdminUid),
+    });
+
+    logger.info(`User ${newAdminUid} invited to list ${listId} by ${uid}`);
+    return { success: true };
+  } catch (error) {
+    logger.error("Error inviting admin:", error);
+    throw new HttpsError("not-found", "The user with that email was not found.");
+  }
+});
+
+
+// --- Scheduled Function for Daily Reset ---
+
+// This function will run every hour.
+export const dailyReset = onSchedule("every 1 hours", async () => {
+    logger.info("Running daily reset check...");
+
+    const now = new Date();
+
+
+    const listsSnapshot = await db.collection("routine_lists").get();
+    if (listsSnapshot.empty) {
+        logger.info("No routine lists to process.");
+        return;
+    }
+
+    for (const doc of listsSnapshot.docs) {
+        const list = doc.data();
+        const listRef = doc.ref;
+
+        // Simple check: if the refresh time matches the current hour, reset.
+        // A more robust solution would use a library to handle timezones correctly.
+        // For this version, we assume refreshTime is in the user's local time
+        // and we just check if the hour matches. This is a simplification.
+        const tasksToReset = list.tasks.filter((task: any) => {
+            const [taskHour] = task.refreshTime.split(':').map(Number);
+            // This is a naive check. A better implementation would use a library
+            // to convert the list's timezone to the current UTC hour.
+            // For now, we'll just reset if the hour matches in any timezone.
+            // This is a known limitation of this implementation.
+            return task.status === true && taskHour === now.getHours();
+        });
+
+
+        if (tasksToReset.length > 0) {
+            const newTasks = list.tasks.map((task: any) => {
+                const [taskHour] = task.refreshTime.split(':').map(Number);
+                if (task.status === true && taskHour === now.getHours()) {
+                    return { ...task, status: false };
+                }
+                return task;
+            });
+
+            await listRef.update({ tasks: newTasks });
+            logger.info(`Reset ${tasksToReset.length} tasks for list ${doc.id}`);
+        }
+    }
+    logger.info("Daily reset check finished.");
+});
