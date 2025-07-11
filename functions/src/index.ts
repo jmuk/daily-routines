@@ -4,8 +4,7 @@ import { getAuth } from "firebase-admin/auth";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
-import { v4 as uuidv4 } from "uuid";
-import { utcToZonedTime, format } from "date-fns-tz";
+import { toZonedTime } from "date-fns-tz";
 
 // Initialize Firebase Admin SDK
 initializeApp();
@@ -27,6 +26,28 @@ function getUid(request: any): string {
     return uid;
 }
 
+/**
+ * Converts a local time string (e.g., "21:00") and a timezone
+ * into the corresponding hour in UTC.
+ * @param {string} refreshTime Local time in "HH:mm" format.
+ * @param {string} timezone IANA timezone name.
+ * @return {number} The hour (0-23) in UTC.
+ */
+function convertLocalTimeToUtcHour(refreshTime: string, timezone: string): number {
+    const [hour, minute] = refreshTime.split(':').map(Number);
+    const now = new Date();
+
+    // Create a date object for today in the specified timezone with the given time
+    const localDate = toZonedTime(now, timezone);
+    localDate.setHours(hour, minute, 0, 0);
+
+    // Convert that zoned time to a UTC date object
+    const utcDate = new Date(localDate.toLocaleString('en-US', { timeZone: 'UTC' }));
+
+    // Return the UTC hour
+    return utcDate.getUTCHours();
+}
+
 
 // --- Callable Functions ---
 
@@ -45,7 +66,6 @@ export const createRoutineList = onCall(async (request) => {
     name,
     timezone,
     admins: [uid], // The creator is the first admin
-    tasks: [],
   };
 
   const listRef = await db.collection("routine_lists").add(newList);
@@ -63,7 +83,7 @@ export const getRoutineLists = onCall(async (request) => {
 });
 
 /**
- * Fetches the details of a single routine list.
+ * Fetches the details of a single routine list, including its tasks.
  */
 export const getRoutineListDetails = onCall(async (request) => {
     const uid = getUid(request);
@@ -83,7 +103,11 @@ export const getRoutineListDetails = onCall(async (request) => {
         throw new HttpsError("permission-denied", "You are not an admin of this list.");
     }
 
-    return { id: listDoc.id, ...listData };
+    // Fetch tasks for this list
+    const tasksSnapshot = await db.collection("tasks").where("listId", "==", listId).get();
+    const tasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    return { id: listDoc.id, ...listData, tasks };
 });
 
 
@@ -107,22 +131,20 @@ export const addTask = onCall(async (request) => {
   }
 
   const newTask = {
-    id: uuidv4(), // Generate a v4 UUID
+    listId,
     description,
     status: false,
-    refreshTime, // e.g., "06:00"
+    refreshTime, // e.g., "06:00" - kept for display purposes
+    refreshHourUtc: convertLocalTimeToUtcHour(refreshTime, listData.timezone),
   };
 
-  await listRef.update({
-    tasks: FieldValue.arrayUnion(newTask),
-  });
-
-  logger.info(`Task added to list ${listId} by ${uid}`);
-  return { taskId: newTask.id };
+  const taskRef = await db.collection("tasks").add(newTask);
+  logger.info(`Task added to list ${listId} by ${uid} with new task ID: ${taskRef.id}`);
+  return { taskId: taskRef.id };
 });
 
 /**
- * Updates the status of a task in a routine list.
+ * Updates the status of a task.
  */
 export const updateTaskStatus = onCall(async (request) => {
   const uid = getUid(request);
@@ -140,14 +162,9 @@ export const updateTaskStatus = onCall(async (request) => {
     throw new HttpsError("permission-denied", "You are not an admin of this list.");
   }
 
-  const newTasks = listData.tasks.map((task: any) => {
-    if (task.id === taskId) {
-      return { ...task, status };
-    }
-    return task;
-  });
+  const taskRef = db.collection("tasks").doc(taskId);
+  await taskRef.update({ status });
 
-  await listRef.update({ tasks: newTasks });
   logger.info(`Task ${taskId} in list ${listId} updated by ${uid}`);
   return { success: true };
 });
@@ -199,42 +216,26 @@ export const inviteAdmin = onCall(async (request) => {
 export const dailyReset = onSchedule("every 1 hours", async () => {
     logger.info("Running daily reset check...");
 
-    const nowUtc = new Date();
+    const currentUtcHour = new Date().getUTCHours();
+    logger.info(`Current UTC hour is ${currentUtcHour}. Querying for tasks to reset.`);
 
-    const listsSnapshot = await db.collection("routine_lists").get();
-    if (listsSnapshot.empty) {
-        logger.info("No routine lists to process.");
+    const tasksToResetSnapshot = await db.collection("tasks")
+        .where("status", "==", true)
+        .where("refreshHourUtc", "==", currentUtcHour)
+        .get();
+
+    if (tasksToResetSnapshot.empty) {
+        logger.info("No tasks to reset at this hour.");
         return;
     }
 
-    for (const doc of listsSnapshot.docs) {
-        const list = doc.data();
-        const listRef = doc.ref;
-        const timezone = list.timezone || "UTC"; // Default to UTC if no timezone
+    const batch = db.batch();
+    tasksToResetSnapshot.docs.forEach(doc => {
+        logger.info(`Resetting task ${doc.id}`);
+        batch.update(doc.ref, { status: false });
+    });
 
-        try {
-            const nowInListTimezone = utcToZonedTime(nowUtc, timezone);
-            const currentHourInListTimezone = parseInt(format(nowInListTimezone, 'HH', { timeZone: timezone }));
-
-            let needsUpdate = false;
-            const newTasks = list.tasks.map((task: any) => {
-                if (task.status === true) {
-                    const [taskHour] = task.refreshTime.split(':').map(Number);
-                    if (taskHour === currentHourInListTimezone) {
-                        needsUpdate = true;
-                        return { ...task, status: false };
-                    }
-                }
-                return task;
-            });
-
-            if (needsUpdate) {
-                await listRef.update({ tasks: newTasks });
-                logger.info(`Reset tasks for list ${doc.id} in timezone ${timezone}`);
-            }
-        } catch (error) {
-            logger.error(`Failed to process list ${doc.id} with timezone ${timezone}.`, error);
-        }
-    }
+    await batch.commit();
+    logger.info(`Successfully reset ${tasksToResetSnapshot.size} tasks.`);
     logger.info("Daily reset check finished.");
 });

@@ -13,6 +13,22 @@ service cloud.firestore {
       return resource.data.admins.size() == 1 && resource.data.admins[0] == request.auth.uid;
     }
 
+    // Rules for the 'tasks' collection
+    match /tasks/{taskId} {
+      // READ: Allow read access if the user is an admin of the parent list.
+      allow read: if request.auth != null && isListAdmin(resource.data.listId);
+
+      // CREATE: Allow task creation if the user is an admin of the parent list.
+      allow create: if request.auth != null && isListAdmin(request.resource.data.listId);
+
+      // UPDATE: Allow task updates if the user is an admin of the parent list,
+      // OR if the request is coming from the server (service account).
+      allow update: if (request.auth != null && isListAdmin(resource.data.listId)) || request.auth == null;
+
+      // DELETE: Allow task deletion if the user is an admin of the parent list.
+      allow delete: if request.auth != null && isListAdmin(resource.data.listId);
+    }
+
     // Rules for the 'routine_lists' collection
     match /routine_lists/{listId} {
 
