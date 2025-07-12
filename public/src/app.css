@@ -137,3 +137,24 @@ input[type="text"], input[type="email"] {
     font-weight: bold;
     color: #555;
 }
+
+
+/* Responsive Design */
+@media (max-width: 600px) {
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    header h1 {
+        margin-bottom: 1rem;
+    }
+
+    main {
+        padding: 1rem;
+    }
+
+    section {
+        padding: 1.5rem;
+    }
+}

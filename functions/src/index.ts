@@ -13,17 +13,17 @@ const auth = getAuth();
 
 const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 
-// Helper to get UID, faking it for the emulator if necessary
-function getUid(request: any): string {
-    let uid = request.auth?.uid;
-    if (isEmulator && !uid) {
-        logger.warn("EMULATOR MODE: Faking UID for request.");
-        return "fake-admin-uid";
+// Helper to get user's email, faking it for the emulator if necessary
+function getEmail(request: any): string {
+    if (isEmulator && !request.auth?.token.email) {
+        logger.warn("EMULATOR MODE: Faking email for request.");
+        return "admin@example.com";
     }
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in.");
+    const email = request.auth?.token.email;
+    if (!email) {
+        throw new HttpsError("unauthenticated", "You must be logged in with an email.");
     }
-    return uid;
+    return email;
 }
 
 /**
@@ -55,7 +55,7 @@ function convertLocalTimeToUtcHour(refreshTime: string, timezone: string): numbe
  * Creates a new routine list for the authenticated user.
  */
 export const createRoutineList = onCall(async (request) => {
-  const uid = getUid(request);
+  const email = getEmail(request);
 
   const { name, timezone } = request.data;
   if (!name || !timezone) {
@@ -65,11 +65,11 @@ export const createRoutineList = onCall(async (request) => {
   const newList = {
     name,
     timezone,
-    admins: [uid], // The creator is the first admin
+    admins: [email], // The creator is the first admin
   };
 
   const listRef = await db.collection("routine_lists").add(newList);
-  logger.info(`New list created by ${uid} with ID: ${listRef.id}`);
+  logger.info(`New list created by ${email} with ID: ${listRef.id}`);
   return { listId: listRef.id };
 });
 
@@ -77,8 +77,8 @@ export const createRoutineList = onCall(async (request) => {
  * Fetches all routine lists where the current user is an admin.
  */
 export const getRoutineLists = onCall(async (request) => {
-  const uid = getUid(request);
-  const snapshot = await db.collection("routine_lists").where("admins", "array-contains", uid).get();
+  const email = getEmail(request);
+  const snapshot = await db.collection("routine_lists").where("admins", "array-contains", email).get();
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 });
 
@@ -86,7 +86,7 @@ export const getRoutineLists = onCall(async (request) => {
  * Fetches the details of a single routine list, including its tasks.
  */
 export const getRoutineListDetails = onCall(async (request) => {
-    const uid = getUid(request);
+    const email = getEmail(request);
 
     const { listId } = request.data;
     if (!listId) {
@@ -99,7 +99,7 @@ export const getRoutineListDetails = onCall(async (request) => {
     }
 
     const listData = listDoc.data();
-    if (!listData?.admins.includes(uid)) {
+    if (!listData?.admins.includes(email)) {
         throw new HttpsError("permission-denied", "You are not an admin of this list.");
     }
 
@@ -115,7 +115,7 @@ export const getRoutineListDetails = onCall(async (request) => {
  * Adds a new task to a specified routine list.
  */
 export const addTask = onCall(async (request) => {
-  const uid = getUid(request);
+  const email = getEmail(request);
 
   const { listId, description, refreshTime } = request.data;
   if (!listId || !description || !refreshTime) {
@@ -126,7 +126,7 @@ export const addTask = onCall(async (request) => {
   const listDoc = await listRef.get();
   const listData = listDoc.data();
 
-  if (!listData || !listData.admins.includes(uid)) {
+  if (!listData || !listData.admins.includes(email)) {
     throw new HttpsError("permission-denied", "You are not an admin of this list.");
   }
 
@@ -139,7 +139,7 @@ export const addTask = onCall(async (request) => {
   };
 
   const taskRef = await db.collection("tasks").add(newTask);
-  logger.info(`Task added to list ${listId} by ${uid} with new task ID: ${taskRef.id}`);
+  logger.info(`Task added to list ${listId} by ${email} with new task ID: ${taskRef.id}`);
   return { taskId: taskRef.id };
 });
 
@@ -147,7 +147,7 @@ export const addTask = onCall(async (request) => {
  * Updates the status of a task.
  */
 export const updateTaskStatus = onCall(async (request) => {
-  const uid = getUid(request);
+  const email = getEmail(request);
 
   const { listId, taskId, status } = request.data;
   if (!listId || !taskId || typeof status !== "boolean") {
@@ -158,25 +158,25 @@ export const updateTaskStatus = onCall(async (request) => {
   const listDoc = await listRef.get();
   const listData = listDoc.data();
 
-  if (!listData || !listData.admins.includes(uid)) {
+  if (!listData || !listData.admins.includes(email)) {
     throw new HttpsError("permission-denied", "You are not an admin of this list.");
   }
 
   const taskRef = db.collection("tasks").doc(taskId);
   await taskRef.update({ status });
 
-  logger.info(`Task ${taskId} in list ${listId} updated by ${uid}`);
+  logger.info(`Task ${taskId} in list ${listId} updated by ${email}`);
   return { success: true };
 });
 
 /**
- * Invites another user to become an admin of a list.
+ * Invites another user to become an admin of a list by adding their email.
  */
 export const inviteAdmin = onCall(async (request) => {
-  const uid = getUid(request);
+  const requesterEmail = getEmail(request);
 
-  const { listId, email } = request.data;
-  if (!listId || !email) {
+  const { listId, email: newAdminEmail } = request.data;
+  if (!listId || !newAdminEmail) {
     throw new HttpsError("invalid-argument", "listId and email are required.");
   }
 
@@ -184,29 +184,20 @@ export const inviteAdmin = onCall(async (request) => {
   const listDoc = await listRef.get();
   const listData = listDoc.data();
 
-  if (!listData || !listData.admins.includes(uid)) {
+  if (!listData || !listData.admins.includes(requesterEmail)) {
     throw new HttpsError("permission-denied", "You are not an admin of this list.");
   }
 
-  // Find the user by email
-  try {
-    const userRecord = await auth.getUserByEmail(email);
-    const newAdminUid = userRecord.uid;
-
-    if (listData.admins.includes(newAdminUid)) {
-        throw new HttpsError("already-exists", "This user is already an admin.");
-    }
-
-    await listRef.update({
-      admins: FieldValue.arrayUnion(newAdminUid),
-    });
-
-    logger.info(`User ${newAdminUid} invited to list ${listId} by ${uid}`);
-    return { success: true };
-  } catch (error) {
-    logger.error("Error inviting admin:", error);
-    throw new HttpsError("not-found", "The user with that email was not found.");
+  if (listData.admins.includes(newAdminEmail)) {
+      throw new HttpsError("already-exists", "This user is already an admin.");
   }
+
+  await listRef.update({
+    admins: FieldValue.arrayUnion(newAdminEmail),
+  });
+
+  logger.info(`Email ${newAdminEmail} invited to list ${listId} by ${requesterEmail}`);
+  return { success: true };
 });
 
 

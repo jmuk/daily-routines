@@ -1,68 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Routines</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-
-    <header>
-        <h1>Daily Routines</h1>
-        <div id="auth-container">
-            <button id="sign-in" class="auth-button">Sign in with Google</button>
-            <button id="sign-out" class="auth-button" style="display: none;">Sign Out</button>
-            <p id="user-info" style="display: none;"></p>
-        </div>
-    </header>
-
-    <main>
-        <!-- Login View -->
-        <section id="login-view">
-            <h2>Welcome</h2>
-            <p>Please sign in to manage your daily routine lists.</p>
-        </section>
-
-        <!-- Routine Lists View -->
-        <section id="lists-view" style="display: none;">
-            <h2>My Routine Lists</h2>
-            <div id="routine-lists-container"></div>
-            <div class="form-container">
-                <h3>Create New List</h3>
-                <input type="text" id="new-list-name" placeholder="New list name...">
-                <button id="create-list-button">Create List</button>
-            </div>
-        </section>
-
-        <!-- Routine Detail View -->
-        <section id="detail-view" style="display: none;">
-            <button id="back-to-lists">&larr; Back to Lists</button>
-            <h2 id="list-name-header"></h2>
-            <p id="list-timezone-info"></p>
-            <div id="tasks-container"></div>
-            <div class="form-container">
-                <h3>Add New Task</h3>
-                <input type="text" id="new-task-description" placeholder="Task description...">
-                <input type="text" id="new-task-refresh-time" placeholder="Refresh time (e.g., 06:00)">
-                <button id="add-task-button">Add Task</button>
-            </div>
-            <div class="form-container">
-                <h3>Invite Admin</h3>
-                <input type="email" id="invite-admin-email" placeholder="user@example.com">
-                <button id="invite-admin-button">Invite</button>
-            </div>
-        </section>
-    </main>
-
-    <!-- Firebase SDK -->
-    <script src="/__/firebase/11.10.0/firebase-app-compat.js"></script>
-    <script src="/__/firebase/11.10.0/firebase-auth-compat.js"></script>
-    <script src="/__/firebase/11.10.0/firebase-functions-compat.js"></script>
-    <script src="/__/firebase/init.js"></script>
-
-    <!-- App Logic -->
-    <script src="app.js"></script>
-
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + Svelte + TS</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

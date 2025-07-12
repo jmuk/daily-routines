@@ -5,12 +5,12 @@ service cloud.firestore {
 
     // Helper function to check if a user is an admin of a list
     function isListAdmin(listId) {
-      return get(/databases/$(database)/documents/routine_lists/$(listId)).data.admins.hasAny([request.auth.uid]);
+      return get(/databases/$(database)/documents/routine_lists/$(listId)).data.admins.hasAny([request.auth.token.email]);
     }
 
     // Helper function to check if the user is the sole admin
     function isSoleAdmin() {
-      return resource.data.admins.size() == 1 && resource.data.admins[0] == request.auth.uid;
+      return resource.data.admins.size() == 1 && resource.data.admins[0] == request.auth.token.email;
     }
 
     // Rules for the 'tasks' collection
@@ -39,7 +39,7 @@ service cloud.firestore {
       // The creator must be the first and only admin.
       allow create: if request.auth != null &&
                       request.resource.data.admins.size() == 1 &&
-                      request.resource.data.admins[0] == request.auth.uid;
+                      request.resource.data.admins[0] == request.auth.token.email;
 
       // UPDATE: Allow updates only by admins.
       // Admins can be updated, but not removed by other admins.
@@ -50,7 +50,7 @@ service cloud.firestore {
                       request.resource.data.timezone == resource.data.timezone &&
                       // Allow admins list to grow, but not shrink unless you are the one leaving.
                       (request.resource.data.admins.hasAll(resource.data.admins) ||
-                       isSoleAdmin() == false && resource.data.admins.removeAll(request.resource.data.admins).hasOnly([request.auth.uid]));
+                       isSoleAdmin() == false && resource.data.admins.removeAll(request.resource.data.admins).hasOnly([request.auth.token.email]));
 
 
       // DELETE: Allow deletion only if the user is an admin.
