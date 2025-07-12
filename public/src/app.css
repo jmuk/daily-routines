@@ -158,3 +158,25 @@ input[type="text"], input[type="email"] {
         padding: 1.5rem;
     }
 }
+
+.admins-container {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e0e0e0;
+}
+
+.admins-container h3 {
+    margin-top: 0;
+}
+
+.admins-container ul {
+    list-style: none;
+    padding: 0;
+}
+
+.admins-container li {
+    background: #f8f9fa;
+    padding: 0.75rem;
+    border-radius: 5px;
+    margin-bottom: 0.5rem;
+}

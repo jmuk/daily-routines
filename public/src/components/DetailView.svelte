@@ -13,6 +13,7 @@
   let newTaskRefreshTime = '';
   let inviteAdminEmail = '';
   let isLoading = true;
+  let admins: string[] = [];
 
   const getRoutineListDetails = httpsCallable(functions, 'getRoutineListDetails');
   const addTask = httpsCallable(functions, 'addTask');
@@ -35,6 +36,7 @@
         .sort(taskCmp);
       listName = result.data.name || 'List';
       listTimezone = result.data.timezone;
+      admins = result.data.admins || [];
     } catch (error) {
       console.error("Error fetching tasks:", error);
       alert("Could not fetch tasks for this list.");
@@ -133,5 +135,14 @@
     <h3>Invite Admin</h3>
     <input type="email" bind:value={inviteAdminEmail} placeholder="user@example.com">
     <button on:click={handleInviteAdmin}>Invite</button>
+  </div>
+
+  <div class="admins-container">
+    <h3>Admins</h3>
+    <ul>
+      {#each admins as admin}
+        <li>{admin}</li>
+      {/each}
+    </ul>
   </div>
 </section>

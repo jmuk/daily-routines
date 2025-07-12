@@ -1,6 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
@@ -9,7 +8,6 @@ import { toZonedTime } from "date-fns-tz";
 // Initialize Firebase Admin SDK
 initializeApp();
 const db = getFirestore();
-const auth = getAuth();
 
 const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 
