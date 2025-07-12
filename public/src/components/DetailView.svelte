@@ -112,12 +112,13 @@
           <div class="task-item" class:completed={task.status}>
             <input 
               type="checkbox" 
+              id="task-{task.id}"
               bind:checked={task.status} 
               on:change={() => handleTaskStatusChange(task.id, task.status)}
             />
-            <span class="task-description">
+            <label for="task-{task.id}" class="task-description">
               {task.description} (Resets at {task.refreshTime})
-            </span>
+            </label>
           </div>
         {/each}
       {/if}
