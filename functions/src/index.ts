@@ -1,27 +1,35 @@
-import { initializeApp } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { onSchedule } from "firebase-functions/v2/scheduler";
+import {initializeApp} from "firebase-admin/app";
+import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
-import { toZonedTime } from "date-fns-tz";
+import {toZonedTime} from "date-fns-tz";
 
 // Initialize Firebase Admin SDK
 initializeApp();
 const db = getFirestore();
 
-const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
 
-// Helper to get user's email, faking it for the emulator if necessary
-function getEmail(request: any): string {
-    if (isEmulator && !request.auth?.token.email) {
-        logger.warn("EMULATOR MODE: Faking email for request.");
-        return "admin@example.com";
-    }
-    const email = request.auth?.token.email;
-    if (!email) {
-        throw new HttpsError("unauthenticated", "You must be logged in with an email.");
-    }
-    return email;
+/**
+ * Helper to get user's email, faking it for the emulator if necessary
+ * @param {any} request The request object.
+ * @return {string} The user's email.
+ */
+function getEmail(
+  request: {data: any, auth?: {token: {email?: string}}}
+): string {
+  if (isEmulator && !request.auth?.token.email) {
+    logger.warn("EMULATOR MODE: Faking email for request.");
+    return "admin@example.com";
+  }
+  const email = request.auth?.token.email;
+  if (!email) {
+    throw new HttpsError(
+      "unauthenticated", "You must be logged in with an email."
+    );
+  }
+  return email;
 }
 
 /**
@@ -31,19 +39,23 @@ function getEmail(request: any): string {
  * @param {string} timezone IANA timezone name.
  * @return {number} The hour (0-23) in UTC.
  */
-function convertLocalTimeToUtcHour(refreshTime: string, timezone: string): number {
-    const [hour, minute] = refreshTime.split(':').map(Number);
-    const now = new Date();
+function convertLocalTimeToUtcHour(
+  refreshTime: string, timezone: string
+): number {
+  const [hour, minute] = refreshTime.split(":").map(Number);
+  const now = new Date();
 
-    // Create a date object for today in the specified timezone with the given time
-    const localDate = toZonedTime(now, timezone);
-    localDate.setHours(hour, minute, 0, 0);
+  // Create a date object for today in the specified timezone with the given time
+  const localDate = toZonedTime(now, timezone);
+  localDate.setHours(hour, minute, 0, 0);
 
-    // Convert that zoned time to a UTC date object
-    const utcDate = new Date(localDate.toLocaleString('en-US', { timeZone: 'UTC' }));
+  // Convert that zoned time to a UTC date object
+  const utcDate = new Date(
+    localDate.toLocaleString("en-US", {timeZone: "UTC"})
+  );
 
-    // Return the UTC hour
-    return utcDate.getUTCHours();
+  // Return the UTC hour
+  return utcDate.getUTCHours();
 }
 
 
@@ -55,9 +67,11 @@ function convertLocalTimeToUtcHour(refreshTime: string, timezone: string): numbe
 export const createRoutineList = onCall(async (request) => {
   const email = getEmail(request);
 
-  const { name, timezone } = request.data;
+  const {name, timezone} = request.data;
   if (!name || !timezone) {
-    throw new HttpsError("invalid-argument", "Name and timezone are required.");
+    throw new HttpsError(
+      "invalid-argument", "Name and timezone are required."
+    );
   }
 
   const newList = {
@@ -68,7 +82,7 @@ export const createRoutineList = onCall(async (request) => {
 
   const listRef = await db.collection("routine_lists").add(newList);
   logger.info(`New list created by ${email} with ID: ${listRef.id}`);
-  return { listId: listRef.id };
+  return {listId: listRef.id};
 });
 
 /**
@@ -76,36 +90,42 @@ export const createRoutineList = onCall(async (request) => {
  */
 export const getRoutineLists = onCall(async (request) => {
   const email = getEmail(request);
-  const snapshot = await db.collection("routine_lists").where("admins", "array-contains", email).get();
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const snapshot = await db.collection("routine_lists")
+    .where("admins", "array-contains", email).get();
+  return snapshot.docs.map((doc) => ({id: doc.id, ...doc.data()}));
 });
 
 /**
  * Fetches the details of a single routine list, including its tasks.
  */
 export const getRoutineListDetails = onCall(async (request) => {
-    const email = getEmail(request);
+  const email = getEmail(request);
 
-    const { listId } = request.data;
-    if (!listId) {
-        throw new HttpsError("invalid-argument", "The 'listId' argument is required.");
-    }
+  const {listId} = request.data;
+  if (!listId) {
+    throw new HttpsError(
+      "invalid-argument", "The 'listId' argument is required."
+    );
+  }
 
-    const listDoc = await db.collection("routine_lists").doc(listId).get();
-    if (!listDoc.exists) {
-        throw new HttpsError("not-found", "The specified list does not exist.");
-    }
+  const listDoc = await db.collection("routine_lists").doc(listId).get();
+  if (!listDoc.exists) {
+    throw new HttpsError("not-found", "The specified list does not exist.");
+  }
 
-    const listData = listDoc.data();
-    if (!listData?.admins.includes(email)) {
-        throw new HttpsError("permission-denied", "You are not an admin of this list.");
-    }
+  const listData = listDoc.data();
+  if (!listData?.admins.includes(email)) {
+    throw new HttpsError(
+      "permission-denied", "You are not an admin of this list."
+    );
+  }
 
-    // Fetch tasks for this list
-    const tasksSnapshot = await db.collection("tasks").where("listId", "==", listId).get();
-    const tasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  // Fetch tasks for this list
+  const tasksSnapshot = await db.collection("tasks")
+    .where("listId", "==", listId).get();
+  const tasks = tasksSnapshot.docs.map((doc) => ({id: doc.id, ...doc.data()}));
 
-    return { id: listDoc.id, ...listData, tasks };
+  return {id: listDoc.id, ...listData, tasks};
 });
 
 
@@ -115,9 +135,12 @@ export const getRoutineListDetails = onCall(async (request) => {
 export const addTask = onCall(async (request) => {
   const email = getEmail(request);
 
-  const { listId, description, refreshTime } = request.data;
+  const {listId, description, refreshTime} = request.data;
   if (!listId || !description || !refreshTime) {
-    throw new HttpsError("invalid-argument", "listId, description, and refreshTime are required.");
+    throw new HttpsError(
+      "invalid-argument",
+      "listId, description, and refreshTime are required."
+    );
   }
 
   const listRef = db.collection("routine_lists").doc(listId);
@@ -125,7 +148,9 @@ export const addTask = onCall(async (request) => {
   const listData = listDoc.data();
 
   if (!listData || !listData.admins.includes(email)) {
-    throw new HttpsError("permission-denied", "You are not an admin of this list.");
+    throw new HttpsError(
+      "permission-denied", "You are not an admin of this list."
+    );
   }
 
   const newTask = {
@@ -137,8 +162,10 @@ export const addTask = onCall(async (request) => {
   };
 
   const taskRef = await db.collection("tasks").add(newTask);
-  logger.info(`Task added to list ${listId} by ${email} with new task ID: ${taskRef.id}`);
-  return { taskId: taskRef.id };
+  logger.info(
+    `Task added to list ${listId} by ${email} with new task ID: ${taskRef.id}`
+  );
+  return {taskId: taskRef.id};
 });
 
 /**
@@ -147,9 +174,12 @@ export const addTask = onCall(async (request) => {
 export const updateTaskStatus = onCall(async (request) => {
   const email = getEmail(request);
 
-  const { listId, taskId, status } = request.data;
+  const {listId, taskId, status} = request.data;
   if (!listId || !taskId || typeof status !== "boolean") {
-    throw new HttpsError("invalid-argument", "listId, taskId, and a boolean status are required.");
+    throw new HttpsError(
+      "invalid-argument",
+      "listId, taskId, and a boolean status are required."
+    );
   }
 
   const listRef = db.collection("routine_lists").doc(listId);
@@ -157,14 +187,16 @@ export const updateTaskStatus = onCall(async (request) => {
   const listData = listDoc.data();
 
   if (!listData || !listData.admins.includes(email)) {
-    throw new HttpsError("permission-denied", "You are not an admin of this list.");
+    throw new HttpsError(
+      "permission-denied", "You are not an admin of this list."
+    );
   }
 
   const taskRef = db.collection("tasks").doc(taskId);
-  await taskRef.update({ status });
+  await taskRef.update({status});
 
   logger.info(`Task ${taskId} in list ${listId} updated by ${email}`);
-  return { success: true };
+  return {success: true};
 });
 
 /**
@@ -173,9 +205,11 @@ export const updateTaskStatus = onCall(async (request) => {
 export const inviteAdmin = onCall(async (request) => {
   const requesterEmail = getEmail(request);
 
-  const { listId, email: newAdminEmail } = request.data;
+  const {listId, email: newAdminEmail} = request.data;
   if (!listId || !newAdminEmail) {
-    throw new HttpsError("invalid-argument", "listId and email are required.");
+    throw new HttpsError(
+      "invalid-argument", "listId and email are required."
+    );
   }
 
   const listRef = db.collection("routine_lists").doc(listId);
@@ -183,19 +217,63 @@ export const inviteAdmin = onCall(async (request) => {
   const listData = listDoc.data();
 
   if (!listData || !listData.admins.includes(requesterEmail)) {
-    throw new HttpsError("permission-denied", "You are not an admin of this list.");
+    throw new HttpsError(
+      "permission-denied", "You are not an admin of this list."
+    );
   }
 
   if (listData.admins.includes(newAdminEmail)) {
-      throw new HttpsError("already-exists", "This user is already an admin.");
+    throw new HttpsError("already-exists", "This user is already an admin.");
   }
 
   await listRef.update({
     admins: FieldValue.arrayUnion(newAdminEmail),
   });
 
-  logger.info(`Email ${newAdminEmail} invited to list ${listId} by ${requesterEmail}`);
-  return { success: true };
+  logger.info(
+    `Email ${newAdminEmail} invited to list ${listId} by ${requesterEmail}`
+  );
+  return {success: true};
+});
+
+
+/**
+ * Removes a task from a specified routine list.
+ */
+export const removeTask = onCall(async (request) => {
+  const email = getEmail(request);
+
+  const {listId, taskId} = request.data;
+  if (!listId || !taskId) {
+    throw new HttpsError(
+      "invalid-argument", "listId and taskId are required."
+    );
+  }
+
+  const listRef = db.collection("routine_lists").doc(listId);
+  const listDoc = await listRef.get();
+  const listData = listDoc.data();
+
+  if (!listData || !listData.admins.includes(email)) {
+    throw new HttpsError(
+      "permission-denied", "You are not an admin of this list."
+    );
+  }
+
+  // Also check if the task belongs to the list, as an extra security measure
+  const taskRef = db.collection("tasks").doc(taskId);
+  const taskDoc = await taskRef.get();
+  if (!taskDoc.exists || taskDoc.data()?.listId !== listId) {
+    throw new HttpsError(
+      "not-found",
+      "The task does not exist or does not belong to this list."
+    );
+  }
+
+  await taskRef.delete();
+
+  logger.info(`Task ${taskId} removed from list ${listId} by ${email}`);
+  return {success: true};
 });
 
 
@@ -203,28 +281,30 @@ export const inviteAdmin = onCall(async (request) => {
 
 // This function will run every hour.
 export const dailyReset = onSchedule("every 1 hours", async () => {
-    logger.info("Running daily reset check...");
+  logger.info("Running daily reset check...");
 
-    const currentUtcHour = new Date().getUTCHours();
-    logger.info(`Current UTC hour is ${currentUtcHour}. Querying for tasks to reset.`);
+  const currentUtcHour = new Date().getUTCHours();
+  logger.info(
+    `Current UTC hour is ${currentUtcHour}. Querying for tasks to reset.`
+  );
 
-    const tasksToResetSnapshot = await db.collection("tasks")
-        .where("status", "==", true)
-        .where("refreshHourUtc", "==", currentUtcHour)
-        .get();
+  const tasksToResetSnapshot = await db.collection("tasks")
+    .where("status", "==", true)
+    .where("refreshHourUtc", "==", currentUtcHour)
+    .get();
 
-    if (tasksToResetSnapshot.empty) {
-        logger.info("No tasks to reset at this hour.");
-        return;
-    }
+  if (tasksToResetSnapshot.empty) {
+    logger.info("No tasks to reset at this hour.");
+    return;
+  }
 
-    const batch = db.batch();
-    tasksToResetSnapshot.docs.forEach(doc => {
-        logger.info(`Resetting task ${doc.id}`);
-        batch.update(doc.ref, { status: false });
-    });
+  const batch = db.batch();
+  tasksToResetSnapshot.docs.forEach((doc) => {
+    logger.info(`Resetting task ${doc.id}`);
+    batch.update(doc.ref, {status: false});
+  });
 
-    await batch.commit();
-    logger.info(`Successfully reset ${tasksToResetSnapshot.size} tasks.`);
-    logger.info("Daily reset check finished.");
+  await batch.commit();
+  logger.info(`Successfully reset ${tasksToResetSnapshot.size} tasks.`);
+  logger.info("Daily reset check finished.");
 });

@@ -19,6 +19,7 @@
   const addTask = httpsCallable(functions, 'addTask');
   const updateTaskStatus = httpsCallable(functions, 'updateTaskStatus');
   const inviteAdmin = httpsCallable(functions, 'inviteAdmin');
+  const removeTask = httpsCallable(functions, 'removeTask');
 
   function taskCmp(t1: any, t2: any) {
     if (t1.status != t2.status) {
@@ -94,6 +95,19 @@
     }
   }
 
+  async function handleRemoveTask(taskId: string) {
+    if (!confirm("Are you sure you want to remove this task?")) {
+      return;
+    }
+    try {
+      await removeTask({ listId, taskId });
+      tasks = tasks.filter(t => t.id !== taskId);
+    } catch (error) {
+      console.error("Error removing task:", error);
+      alert("Failed to remove task.");
+    }
+  }
+
   onMount(fetchTasks);
 </script>
 
@@ -119,6 +133,7 @@
             <label for="task-{task.id}" class="task-description">
               {task.description} (Resets at {task.refreshTime})
             </label>
+            <button class="remove-task-btn" on:click={() => handleRemoveTask(task.id)}>x</button>
           </div>
         {/each}
       {/if}
