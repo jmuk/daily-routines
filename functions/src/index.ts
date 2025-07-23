@@ -3,7 +3,6 @@ import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {onCall, HttpsError, CallableOptions} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
-import {toZonedTime} from "date-fns-tz";
 
 // Initialize Firebase Admin SDK
 initializeApp();
@@ -36,33 +35,6 @@ function getEmail(
   }
   return email;
 }
-
-/**
- * Converts a local time string (e.g., "21:00") and a timezone
- * into the corresponding hour in UTC.
- * @param {string} refreshTime Local time in "HH:mm" format.
- * @param {string} timezone IANA timezone name.
- * @return {number} The hour (0-23) in UTC.
- */
-function convertLocalTimeToUtcHour(
-  refreshTime: string, timezone: string
-): number {
-  const [hour, minute] = refreshTime.split(":").map(Number);
-  const now = new Date();
-
-  // Create a date object for today in the specified timezone with the given time
-  const localDate = toZonedTime(now, timezone);
-  localDate.setHours(hour, minute, 0, 0);
-
-  // Convert that zoned time to a UTC date object
-  const utcDate = new Date(
-    localDate.toLocaleString("en-US", {timeZone: "UTC"})
-  );
-
-  // Return the UTC hour
-  return utcDate.getUTCHours();
-}
-
 
 // --- Callable Functions ---
 
@@ -125,9 +97,11 @@ export const getRoutineListDetails = onCall(callableOptions, async (request) => 
     );
   }
 
-  // Fetch tasks for this list
+  // Fetch tasks for this list, sorted by the next refresh time
   const tasksSnapshot = await db.collection("tasks")
-    .where("listId", "==", listId).get();
+    .where("listId", "==", listId)
+    .orderBy("refreshTimestamp", "asc")
+    .get();
   const tasks = tasksSnapshot.docs.map((doc) => ({id: doc.id, ...doc.data()}));
 
   return {id: listDoc.id, ...listData, tasks};
@@ -140,11 +114,11 @@ export const getRoutineListDetails = onCall(callableOptions, async (request) => 
 export const addTask = onCall(callableOptions, async (request) => {
   const email = getEmail(request);
 
-  const {listId, description, refreshTime} = request.data;
-  if (!listId || !description || !refreshTime) {
+  const {listId, description, refreshHours} = request.data;
+  if (!listId || !description || !refreshHours) {
     throw new HttpsError(
       "invalid-argument",
-      "listId, description, and refreshTime are required."
+      "listId, description, and refreshHours are required."
     );
   }
 
@@ -158,12 +132,16 @@ export const addTask = onCall(callableOptions, async (request) => {
     );
   }
 
+  const refreshDuration = refreshHours * 60 * 60 * 1000;
+  const now = Date.now();
+
   const newTask = {
     listId,
     description,
     status: false,
-    refreshTime, // e.g., "06:00" - kept for display purposes
-    refreshHourUtc: convertLocalTimeToUtcHour(refreshTime, listData.timezone),
+    refreshDuration,
+    refreshTimestamp: now + refreshDuration,
+    previousRefreshTimestamp: null,
   };
 
   const taskRef = await db.collection("tasks").add(newTask);
@@ -198,7 +176,26 @@ export const updateTaskStatus = onCall(callableOptions, async (request) => {
   }
 
   const taskRef = db.collection("tasks").doc(taskId);
-  await taskRef.update({status});
+  const taskDoc = await taskRef.get();
+  if (!taskDoc.exists) {
+    throw new HttpsError("not-found", "Task not found.");
+  }
+  const taskData = taskDoc.data();
+  if (!taskData) {
+    throw new HttpsError("data-loss", "Task data is missing.");
+  }
+
+  const updates: { [key: string]: any } = {status};
+
+  if (status === true) { // Marked as done
+    updates.previousRefreshTimestamp = taskData.refreshTimestamp;
+    updates.refreshTimestamp = Date.now() + taskData.refreshDuration;
+  } else { // Marked as undone
+    updates.refreshTimestamp = taskData.previousRefreshTimestamp;
+  }
+
+  await taskRef.update(updates);
+
 
   logger.info(`Task ${taskId} in list ${listId} updated by ${email}`);
   return {success: true};
@@ -288,14 +285,17 @@ export const removeTask = onCall(callableOptions, async (request) => {
 export const dailyReset = onSchedule("every 1 hours", async () => {
   logger.info("Running daily reset check...");
 
-  const currentUtcHour = new Date().getUTCHours();
+  const now = Date.now();
+  const oneHourAgo = now - (60 * 60 * 1000);
+
   logger.info(
-    `Current UTC hour is ${currentUtcHour}. Querying for tasks to reset.`
+    `Querying for tasks to reset with refreshTimestamp between ${oneHourAgo} and ${now}.`
   );
 
   const tasksToResetSnapshot = await db.collection("tasks")
     .where("status", "==", true)
-    .where("refreshHourUtc", "==", currentUtcHour)
+    .where("refreshTimestamp", ">=", oneHourAgo)
+    .where("refreshTimestamp", "<=", now)
     .get();
 
   if (tasksToResetSnapshot.empty) {
@@ -305,8 +305,15 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
 
   const batch = db.batch();
   tasksToResetSnapshot.docs.forEach((doc) => {
-    logger.info(`Resetting task ${doc.id}`);
-    batch.update(doc.ref, {status: false});
+    const taskData = doc.data();
+    if (taskData) {
+      logger.info(`Resetting task ${doc.id}`);
+      batch.update(doc.ref, {
+        status: false,
+        previousRefreshTimestamp: taskData.refreshTimestamp,
+        refreshTimestamp: taskData.refreshTimestamp + taskData.refreshDuration,
+      });
+    }
   });
 
   await batch.commit();

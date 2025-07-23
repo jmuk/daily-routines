@@ -19,11 +19,27 @@ service cloud.firestore {
       allow read: if request.auth != null && isListAdmin(resource.data.listId);
 
       // CREATE: Allow task creation if the user is an admin of the parent list.
-      allow create: if request.auth != null && isListAdmin(request.resource.data.listId);
+      // Validate the initial state of the task document.
+      allow create: if request.auth != null &&
+                      isListAdmin(request.resource.data.listId) &&
+                      request.resource.data.description is string &&
+                      request.resource.data.status == false &&
+                      request.resource.data.refreshDuration is number &&
+                      request.resource.data.refreshTimestamp is number &&
+                      request.resource.data.previousRefreshTimestamp == null &&
+                      request.resource.data.keys().hasOnly([
+                        'listId', 'description', 'status',
+                        'refreshDuration', 'refreshTimestamp', 'previousRefreshTimestamp'
+                      ]);
 
       // UPDATE: Allow task updates if the user is an admin of the parent list,
-      // OR if the request is coming from the server (service account).
-      allow update: if (request.auth != null && isListAdmin(resource.data.listId)) || request.auth == null;
+      // OR if the request is coming from the server (service account for resets).
+      // When a user updates, they can only change the status-related fields.
+      allow update: if request.auth == null || // Server-side updates (dailyReset)
+                      (request.auth != null && isListAdmin(resource.data.listId) &&
+                       request.resource.data.listId == resource.data.listId &&
+                       request.resource.data.description == resource.data.description &&
+                       request.resource.data.refreshDuration == resource.data.refreshDuration);
 
       // DELETE: Allow task deletion if the user is an admin of the parent list.
       allow delete: if request.auth != null && isListAdmin(resource.data.listId);

@@ -15,11 +15,25 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "listId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "refreshTimestamp",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "refreshHourUtc",
+          "fieldPath": "refreshTimestamp",
           "order": "ASCENDING"
         }
       ]

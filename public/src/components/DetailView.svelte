@@ -10,7 +10,7 @@
   let listName = 'List';
   let listTimezone: string | null = null;
   let newTaskDescription = '';
-  let newTaskRefreshTime = '';
+  let newTaskRefreshHours = 24;
   let inviteAdminEmail = '';
   let isLoading = true;
   let admins: string[] = [];
@@ -21,20 +21,12 @@
   const inviteAdmin = httpsCallable(functions, 'inviteAdmin');
   const removeTask = httpsCallable(functions, 'removeTask');
 
-  function taskCmp(t1: any, t2: any) {
-    if (t1.status != t2.status) {
-      return t1.status - t2.status;
-    }
-    return t1.originalIndex - t2.originalIndex;
-  }
-
   async function fetchTasks() {
     isLoading = true;
     try {
       const result: any = await getRoutineListDetails({ listId });
-      tasks = (result.data.tasks || [])
-        .map((task: any, idx: number) => {return {originalIndex: idx, ...task}})
-        .sort(taskCmp);
+      // Tasks are now pre-sorted by the backend.
+      tasks = result.data.tasks || [];
       listName = result.data.name || 'List';
       listTimezone = result.data.timezone;
       admins = result.data.admins || [];
@@ -48,13 +40,13 @@
   }
 
   async function handleAddTask() {
-    if (!newTaskDescription.trim() || !newTaskRefreshTime.trim()) {
-      return alert("Please provide a description and refresh time.");
+    if (!newTaskDescription.trim() || !newTaskRefreshHours) {
+      return alert("Please provide a description and refresh duration in hours.");
     }
     try {
-      await addTask({ listId, description: newTaskDescription, refreshTime: newTaskRefreshTime });
+      await addTask({ listId, description: newTaskDescription, refreshHours: newTaskRefreshHours });
       newTaskDescription = '';
-      newTaskRefreshTime = '';
+      newTaskRefreshHours = 24;
       await fetchTasks();
     } catch (error) {
       console.error("Error adding task:", error);
@@ -65,22 +57,12 @@
   async function handleTaskStatusChange(taskId: string, newStatus: boolean) {
     try {
       await updateTaskStatus({ listId, taskId, status: newStatus });
-      // Find the task and update its status in the local array.
-      const taskIndex = tasks.findIndex(t => t.id === taskId);
-      if (taskIndex !== -1) {
-        tasks[taskIndex].status = newStatus;
-      }
+      // Re-fetch to get the updated list with backend sorting.
+      await fetchTasks();
     } catch (error) {
       console.error("Error updating task status:", error);
       alert("Failed to update task status.");
-      // Optional: revert local state on failure
-      const taskIndex = tasks.findIndex(t => t.id === taskId);
-      if (taskIndex !== -1) {
-        tasks[taskIndex].status = !newStatus;
-      }
     }
-    // Create a new sorted array to trigger Svelte's reactivity.
-    tasks = [...tasks].sort(taskCmp);
   }
   
   async function handleInviteAdmin() {
@@ -101,7 +83,8 @@
     }
     try {
       await removeTask({ listId, taskId });
-      tasks = tasks.filter(t => t.id !== taskId);
+      // Re-fetch to get the updated list.
+      await fetchTasks();
     } catch (error) {
       console.error("Error removing task:", error);
       alert("Failed to remove task.");
@@ -131,7 +114,7 @@
               on:change={() => handleTaskStatusChange(task.id, task.status)}
             />
             <label for="task-{task.id}" class="task-description">
-              {task.description} (Resets at {task.refreshTime})
+              {task.description} (Resets every {task.refreshDuration / (1000 * 60 * 60)} hours)
             </label>
             <button class="remove-task-btn" on:click={() => handleRemoveTask(task.id)}>x</button>
           </div>
@@ -143,7 +126,7 @@
   <div class="form-container">
     <h3>Add New Task</h3>
     <input type="text" bind:value={newTaskDescription} placeholder="Task description...">
-    <input type="text" bind:value={newTaskRefreshTime} placeholder="Refresh time (e.g., 06:00)">
+    <input type="number" bind:value={newTaskRefreshHours} placeholder="Refresh duration in hours (e.g., 24)">
     <button on:click={handleAddTask}>Add Task</button>
   </div>
 
