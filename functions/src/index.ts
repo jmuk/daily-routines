@@ -1,6 +1,6 @@
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
-import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onCall, HttpsError, CallableOptions} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import {toZonedTime} from "date-fns-tz";
@@ -10,6 +10,11 @@ initializeApp();
 const db = getFirestore();
 
 const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+
+// Define common options for callable functions to allow requests from any origin.
+const callableOptions: CallableOptions = {
+  cors: true,
+};
 
 /**
  * Helper to get user's email, faking it for the emulator if necessary
@@ -64,7 +69,7 @@ function convertLocalTimeToUtcHour(
 /**
  * Creates a new routine list for the authenticated user.
  */
-export const createRoutineList = onCall(async (request) => {
+export const createRoutineList = onCall(callableOptions, async (request) => {
   const email = getEmail(request);
 
   const {name, timezone} = request.data;
@@ -88,7 +93,7 @@ export const createRoutineList = onCall(async (request) => {
 /**
  * Fetches all routine lists where the current user is an admin.
  */
-export const getRoutineLists = onCall(async (request) => {
+export const getRoutineLists = onCall(callableOptions, async (request) => {
   const email = getEmail(request);
   const snapshot = await db.collection("routine_lists")
     .where("admins", "array-contains", email).get();
@@ -98,7 +103,7 @@ export const getRoutineLists = onCall(async (request) => {
 /**
  * Fetches the details of a single routine list, including its tasks.
  */
-export const getRoutineListDetails = onCall(async (request) => {
+export const getRoutineListDetails = onCall(callableOptions, async (request) => {
   const email = getEmail(request);
 
   const {listId} = request.data;
@@ -132,7 +137,7 @@ export const getRoutineListDetails = onCall(async (request) => {
 /**
  * Adds a new task to a specified routine list.
  */
-export const addTask = onCall(async (request) => {
+export const addTask = onCall(callableOptions, async (request) => {
   const email = getEmail(request);
 
   const {listId, description, refreshTime} = request.data;
@@ -171,7 +176,7 @@ export const addTask = onCall(async (request) => {
 /**
  * Updates the status of a task.
  */
-export const updateTaskStatus = onCall(async (request) => {
+export const updateTaskStatus = onCall(callableOptions, async (request) => {
   const email = getEmail(request);
 
   const {listId, taskId, status} = request.data;
@@ -202,7 +207,7 @@ export const updateTaskStatus = onCall(async (request) => {
 /**
  * Invites another user to become an admin of a list by adding their email.
  */
-export const inviteAdmin = onCall(async (request) => {
+export const inviteAdmin = onCall(callableOptions, async (request) => {
   const requesterEmail = getEmail(request);
 
   const {listId, email: newAdminEmail} = request.data;
@@ -240,7 +245,7 @@ export const inviteAdmin = onCall(async (request) => {
 /**
  * Removes a task from a specified routine list.
  */
-export const removeTask = onCall(async (request) => {
+export const removeTask = onCall(callableOptions, async (request) => {
   const email = getEmail(request);
 
   const {listId, taskId} = request.data;
@@ -308,3 +313,4 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
   logger.info(`Successfully reset ${tasksToResetSnapshot.size} tasks.`);
   logger.info("Daily reset check finished.");
 });
+
