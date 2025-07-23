@@ -126,7 +126,8 @@
   <div class="form-container">
     <h3>Add New Task</h3>
     <input type="text" bind:value={newTaskDescription} placeholder="Task description...">
-    <input type="number" bind:value={newTaskRefreshHours} placeholder="Refresh duration in hours (e.g., 24)">
+    <label for="refresh-hours-input">Refresh duration in hours (e.g., 24)</label>
+    <input id="refresh-hours-input" type="number" bind:value={newTaskRefreshHours}>
     <button on:click={handleAddTask}>Add Task</button>
   </div>
 
