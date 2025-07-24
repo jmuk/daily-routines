@@ -1,6 +1,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { navigate } from 'svelte-routing';
   import { functions } from '../lib/firebase';
   import { httpsCallable } from 'firebase/functions';
 
@@ -95,7 +96,7 @@
 </script>
 
 <section id="detail-view">
-  <button id="back-to-lists" on:click={() => window.location.hash = '#/'}>&larr; Back to Lists</button>
+  <button id="back-to-lists" on:click={() => navigate('/')}>&larr; Back to Lists</button>
   <h2 id="list-name-header">{listName}</h2>
   {#if isLoading}
     <p>Loading tasks...</p>

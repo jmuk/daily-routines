@@ -2,29 +2,14 @@
   import { onMount } from 'svelte';
   import { user } from './lib/userStore';
   import { auth } from './lib/firebase';
-  import { onAuthStateChanged, type User } from 'firebase/auth';
-  import { hash } from './lib/hashStore';
+  import { onAuthStateChanged } from 'firebase/auth';
+  import { Router, Route } from 'svelte-routing';
   import LoginView from './components/LoginView.svelte';
   import ListsView from './components/ListsView.svelte';
   import DetailView from './components/DetailView.svelte';
   import Header from './components/Header.svelte';
 
-  let currentView: 'login' | 'lists' | 'detail';
-  let currentListId: string | null;
-
-  $: {
-    if (!$user) {
-      currentView = 'login';
-    } else {
-      if ($hash.startsWith('#/list/')) {
-        currentView = 'detail';
-        currentListId = $hash.substring('#/list/'.length);
-      } else {
-        currentView = 'lists';
-        currentListId = null;
-      }
-    }
-  }
+  export let url = "";
 
   onMount(() => {
     if (import.meta.env.DEV) {
@@ -61,11 +46,12 @@
 <Header />
 
 <main>
-  {#if currentView === 'login'}
-    <LoginView />
-  {:else if currentView === 'lists'}
-    <ListsView />
-  {:else if currentView === 'detail'}
-    <DetailView listId={currentListId} />
+  {#if user}
+  <Router {url}>
+    <Route path="/"><ListsView /></Route>
+    <Route path="/list/:listId" let:params><DetailView listId={params.listId}/></Route>
+  </Router>
+  {:else}
+  <LoginView />
   {/if}
 </main>

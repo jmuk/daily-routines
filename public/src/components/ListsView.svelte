@@ -1,6 +1,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { navigate } from 'svelte-routing';
   import { functions } from '../lib/firebase';
   import { httpsCallable } from 'firebase/functions';
 
@@ -37,13 +38,9 @@
     }
   }
 
-  function navigateTo(listId: string) {
-    window.location.hash = `#/list/${listId}`;
-  }
-
   function handleKeyDown(event: KeyboardEvent, listId: string) {
     if (event.key === 'Enter' || event.key === ' ') {
-      navigateTo(listId);
+      navigate(`/list/${listId}`);
     }
   }
 
@@ -59,11 +56,11 @@
       <p>No routine lists found. Create one below!</p>
     {:else}
       {#each lists as list}
-        <div 
+        <div
           class="list-item" 
           role="button" 
           tabindex="0" 
-          on:click={() => navigateTo(list.id)}
+          on:click={() => navigate(`/list/${list.id}`)}
           on:keydown={(e) => handleKeyDown(e, list.id)}
         >
           {list.name}
