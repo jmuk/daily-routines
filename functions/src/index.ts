@@ -74,7 +74,7 @@ async function sendWebhook(listId: string) {
     const response = await fetch(listData.webhookUrl, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(payload),
+      body: JSON.stringify({'merge_variables': payload}),
     });
 
     if (!response.ok) {
