@@ -10,7 +10,8 @@ const db = getFirestore();
 
 const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
 
-// Define common options for callable functions to allow requests from any origin.
+// Define common options for callable functions to allow requests from any
+// origin.
 const callableOptions: CallableOptions = {
   cors: true,
 };
@@ -21,6 +22,7 @@ const callableOptions: CallableOptions = {
  * @return {string} The user's email.
  */
 function getEmail(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   request: {data: any, auth?: {token: {email?: string}}}
 ): string {
   if (isEmulator && !request.auth?.token.email) {
@@ -75,37 +77,40 @@ export const getRoutineLists = onCall(callableOptions, async (request) => {
 /**
  * Fetches the details of a single routine list, including its tasks.
  */
-export const getRoutineListDetails = onCall(callableOptions, async (request) => {
-  const email = getEmail(request);
+export const getRoutineListDetails = onCall(
+  callableOptions, async (request) => {
+    const email = getEmail(request);
 
-  const {listId} = request.data;
-  if (!listId) {
-    throw new HttpsError(
-      "invalid-argument", "The 'listId' argument is required."
-    );
-  }
+    const {listId} = request.data;
+    if (!listId) {
+      throw new HttpsError(
+        "invalid-argument", "The 'listId' argument is required."
+      );
+    }
 
-  const listDoc = await db.collection("routine_lists").doc(listId).get();
-  if (!listDoc.exists) {
-    throw new HttpsError("not-found", "The specified list does not exist.");
-  }
+    const listDoc = await db.collection("routine_lists").doc(listId).get();
+    if (!listDoc.exists) {
+      throw new HttpsError("not-found", "The specified list does not exist.");
+    }
 
-  const listData = listDoc.data();
-  if (!listData?.admins.includes(email)) {
-    throw new HttpsError(
-      "permission-denied", "You are not an admin of this list."
-    );
-  }
+    const listData = listDoc.data();
+    if (!listData?.admins.includes(email)) {
+      throw new HttpsError(
+        "permission-denied", "You are not an admin of this list."
+      );
+    }
 
-  // Fetch tasks for this list, sorted by the next refresh time
-  const tasksSnapshot = await db.collection("tasks")
-    .where("listId", "==", listId)
-    .orderBy("refreshTimestamp", "asc")
-    .get();
-  const tasks = tasksSnapshot.docs.map((doc) => ({id: doc.id, ...doc.data()}));
+    // Fetch tasks for this list, sorted by the next refresh time
+    const tasksSnapshot = await db.collection("tasks")
+      .where("listId", "==", listId)
+      .orderBy("refreshTimestamp", "asc")
+      .get();
+    const tasks = tasksSnapshot.docs.map((doc) => ({
+      id: doc.id, ...doc.data(),
+    }));
 
-  return {id: listDoc.id, ...listData, tasks};
-});
+    return {id: listDoc.id, ...listData, tasks};
+  });
 
 
 /**
@@ -185,11 +190,12 @@ export const updateTaskStatus = onCall(callableOptions, async (request) => {
     throw new HttpsError("data-loss", "Task data is missing.");
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updates: { [key: string]: any } = {status};
 
   if (status === true) { // Marked as done
     updates.previousRefreshTimestamp = taskData.refreshTimestamp;
-    let now = Date.now();
+    const now = Date.now();
     if (taskData.refreshTimestamp - now < taskData.refreshDuration / 2) {
       updates.refreshTimestamp += taskData.refreshDuration;
     }
@@ -293,7 +299,8 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
   const oneHourAgo = now - (60 * 60 * 1000);
 
   logger.info(
-    `Querying for tasks to reset with refreshTimestamp between ${oneHourAgo} and ${now}.`
+    "Querying for tasks to reset with refreshTimestamp between " +
+    `${oneHourAgo} and ${now}.`
   );
 
   const tasksToResetSnapshot = await db.collection("tasks")
@@ -320,7 +327,9 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
   });
 
   await batch.commit();
-  logger.info(`Successfully reset ${tasksToResetSnapshot.size} tasks.`);
+  logger.info(
+    `Successfully reset ${tasksToResetSnapshot.size} tasks.`
+  );
   logger.info("Daily reset check finished.");
 });
 
