@@ -189,9 +189,13 @@ export const updateTaskStatus = onCall(callableOptions, async (request) => {
 
   if (status === true) { // Marked as done
     updates.previousRefreshTimestamp = taskData.refreshTimestamp;
-    updates.refreshTimestamp = Date.now() + taskData.refreshDuration;
+    let now = Date.now();
+    if (taskData.refreshTimestamp - now < taskData.refreshDuration / 2) {
+      updates.refreshTimestamp += taskData.refreshDuration;
+    }
   } else { // Marked as undone
     updates.refreshTimestamp = taskData.previousRefreshTimestamp;
+    updates.previousRefreshTimestamp = null;
   }
 
   await taskRef.update(updates);
@@ -293,7 +297,6 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
   );
 
   const tasksToResetSnapshot = await db.collection("tasks")
-    .where("status", "==", true)
     .where("refreshTimestamp", ">=", oneHourAgo)
     .where("refreshTimestamp", "<=", now)
     .get();
@@ -310,7 +313,7 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
       logger.info(`Resetting task ${doc.id}`);
       batch.update(doc.ref, {
         status: false,
-        previousRefreshTimestamp: taskData.refreshTimestamp,
+        previousRefreshTimestamp: null,
         refreshTimestamp: taskData.refreshTimestamp + taskData.refreshDuration,
       });
     }
