@@ -7,16 +7,6 @@
         {
           "fieldPath": "listId",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "tasks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "listId",
-          "order": "ASCENDING"
         },
         {
           "fieldPath": "refreshTimestamp",
@@ -35,16 +25,6 @@
         {
           "fieldPath": "refreshTimestamp",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "routine_lists",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "admins",
-          "arrayConfig": "CONTAINS"
         }
       ]
     }
