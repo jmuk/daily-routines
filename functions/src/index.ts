@@ -400,6 +400,7 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
   }
 
   const batch = db.batch();
+  const updatedListIds = new Set<string>();
   tasksToResetSnapshot.docs.forEach((doc) => {
     const taskData = doc.data();
     if (taskData) {
@@ -409,6 +410,7 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
         previousRefreshTimestamp: null,
         refreshTimestamp: taskData.refreshTimestamp + taskData.refreshDuration,
       });
+      updatedListIds.add(taskData.listId);
     }
   });
 
@@ -417,4 +419,6 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
     `Successfully reset ${tasksToResetSnapshot.size} tasks.`
   );
   logger.info("Daily reset check finished.");
+  await Promise.all(Array.from(updatedListIds).map(
+    (listId) => sendWebhook(listId)));
 });
