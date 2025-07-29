@@ -38,6 +38,56 @@ function getEmail(
   return email;
 }
 
+// --- Webhook Helper ---
+
+/**
+ * Sends the full list details to a webhook URL if it's configured.
+ * @param {string} listId The ID of the list that was updated.
+ */
+async function sendWebhook(listId: string) {
+  const listDoc = await db.collection("routine_lists").doc(listId).get();
+  if (!listDoc.exists) return;
+
+  const listData = listDoc.data();
+  if (!listData || !listData.webhookUrl) {
+    // No webhook URL configured, so we do nothing.
+    return;
+  }
+
+  // Fetch all tasks for the list to send a complete snapshot.
+  const tasksSnapshot = await db.collection("tasks")
+    .where("listId", "==", listId)
+    .orderBy("refreshTimestamp", "asc")
+    .get();
+  const tasks = tasksSnapshot.docs.map((doc) => ({
+    id: doc.id, ...doc.data(),
+  }));
+
+  const payload = {
+    id: listDoc.id,
+    ...listData,
+    tasks,
+  };
+
+  try {
+    logger.info(`Sending webhook for list ${listId} to ${listData.webhookUrl}`);
+    const response = await fetch(listData.webhookUrl, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Webhook failed with status: ${response.status}`);
+    }
+    logger.info(`Webhook for list ${listId} sent successfully.`);
+  } catch (error) {
+    logger.error(`Error sending webhook for list ${listId}:`, error);
+    // Optional: Add more robust error handling, like retries or notifications.
+  }
+}
+
+
 // --- Callable Functions ---
 
 /**
@@ -153,6 +203,8 @@ export const addTask = onCall(callableOptions, async (request) => {
   logger.info(
     `Task added to list ${listId} by ${email} with new task ID: ${taskRef.id}`
   );
+
+  await sendWebhook(listId);
   return {taskId: taskRef.id};
 });
 
@@ -205,9 +257,9 @@ export const updateTaskStatus = onCall(callableOptions, async (request) => {
   }
 
   await taskRef.update(updates);
-
-
   logger.info(`Task ${taskId} in list ${listId} updated by ${email}`);
+
+  await sendWebhook(listId);
   return {success: true};
 });
 
@@ -283,8 +335,42 @@ export const removeTask = onCall(callableOptions, async (request) => {
   }
 
   await taskRef.delete();
-
   logger.info(`Task ${taskId} removed from list ${listId} by ${email}`);
+
+  await sendWebhook(listId);
+  return {success: true};
+});
+
+/**
+ * Sets or clears the webhook URL for a list.
+ */
+export const setWebhookUrl = onCall(callableOptions, async (request) => {
+  const email = getEmail(request);
+
+  const {listId, url} = request.data;
+  if (!listId) {
+    throw new HttpsError("invalid-argument", "listId is required.");
+  }
+  // URL can be an empty string to clear it.
+  if (typeof url !== "string") {
+    throw new HttpsError(
+      "invalid-argument", "url must be a string."
+    );
+  }
+
+  const listRef = db.collection("routine_lists").doc(listId);
+  const listDoc = await listRef.get();
+  const listData = listDoc.data();
+
+  if (!listData || !listData.admins.includes(email)) {
+    throw new HttpsError(
+      "permission-denied", "You are not an admin of this list."
+    );
+  }
+
+  await listRef.update({webhookUrl: url || null});
+
+  logger.info(`Webhook URL for list ${listId} updated by ${email}`);
   return {success: true};
 });
 
@@ -332,4 +418,3 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
   );
   logger.info("Daily reset check finished.");
 });
-

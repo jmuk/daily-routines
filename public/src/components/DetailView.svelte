@@ -15,12 +15,15 @@
   let inviteAdminEmail = '';
   let isLoading = true;
   let admins: string[] = [];
+  let webhookUrl = '';
+  let webhookUrlInput = '';
 
   const getRoutineListDetails = httpsCallable(functions, 'getRoutineListDetails');
   const addTask = httpsCallable(functions, 'addTask');
   const updateTaskStatus = httpsCallable(functions, 'updateTaskStatus');
   const inviteAdmin = httpsCallable(functions, 'inviteAdmin');
   const removeTask = httpsCallable(functions, 'removeTask');
+  const setWebhookUrl = httpsCallable(functions, 'setWebhookUrl');
 
   async function fetchTasks() {
     isLoading = true;
@@ -31,6 +34,8 @@
       listName = result.data.name || 'List';
       listTimezone = result.data.timezone;
       admins = result.data.admins || [];
+      webhookUrl = result.data.webhookUrl || '';
+      webhookUrlInput = result.data.webhookUrl || '';
     } catch (error) {
       console.error("Error fetching tasks:", error);
       alert("Could not fetch tasks for this list.");
@@ -92,6 +97,17 @@
     }
   }
 
+  async function handleSetWebhook() {
+    try {
+      await setWebhookUrl({ listId, url: webhookUrlInput });
+      alert("Webhook URL updated successfully!");
+      await fetchTasks(); // Refresh data to show the new URL
+    } catch (error: any) {
+      console.error("Error setting webhook URL:", error);
+      alert(`Failed to set webhook URL: ${error.message}`);
+    }
+  }
+
   onMount(fetchTasks);
 </script>
 
@@ -145,5 +161,14 @@
         <li>{admin}</li>
       {/each}
     </ul>
+  </div>
+
+  <div class="form-container">
+    <h3>Webhook URL</h3>
+    {#if webhookUrl}
+      <p>Current URL: <code>{webhookUrl}</code></p>
+    {/if}
+    <input type="url" bind:value={webhookUrlInput} placeholder="Enter new webhook URL...">
+    <button on:click={handleSetWebhook}>{webhookUrl ? 'Update' : 'Set'} Webhook</button>
   </div>
 </section>
