@@ -382,15 +382,11 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
   logger.info("Running daily reset check...");
 
   const now = Date.now();
-  const oneHourAgo = now - (60 * 60 * 1000);
 
   logger.info(
-    "Querying for tasks to reset with refreshTimestamp between " +
-    `${oneHourAgo} and ${now}.`
-  );
+    "Querying for tasks to reset that've passed refreshTimestamp");
 
   const tasksToResetSnapshot = await db.collection("tasks")
-    .where("refreshTimestamp", ">=", oneHourAgo)
     .where("refreshTimestamp", "<=", now)
     .get();
 
@@ -410,7 +406,9 @@ export const dailyReset = onSchedule("every 1 hours", async () => {
         previousRefreshTimestamp: null,
         refreshTimestamp: taskData.refreshTimestamp + taskData.refreshDuration,
       });
-      updatedListIds.add(taskData.listId);
+      if (taskData.status) {
+        updatedListIds.add(taskData.listId);
+      }
     }
   });
 
