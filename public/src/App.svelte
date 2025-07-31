@@ -4,9 +4,8 @@
   import { auth } from './lib/firebase';
   import { onAuthStateChanged } from 'firebase/auth';
   import { Router, Route } from 'svelte-routing';
-  import LoginView from './components/LoginView.svelte';
-  import ListsView from './components/ListsView.svelte';
-  import DetailView from './components/DetailView.svelte';
+  import ListsView from './components/WrappedListsView.svelte';
+  import DetailView from './components/WrappedDetailView.svelte';
   import Header from './components/Header.svelte';
 
   export let url = "";
@@ -46,12 +45,8 @@
 <Header />
 
 <main>
-  {#if user}
   <Router {url}>
     <Route path="/"><ListsView /></Route>
     <Route path="/list/:listId" let:params><DetailView listId={params.listId}/></Route>
   </Router>
-  {:else}
-  <LoginView />
-  {/if}
 </main>
