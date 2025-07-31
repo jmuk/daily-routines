@@ -172,3 +172,7 @@
     <button on:click={handleSetWebhook}>{webhookUrl ? 'Update' : 'Set'} Webhook</button>
   </div>
 </section>
+
+<svelte:head>
+  <title>Daily Routine: {listName}</title>
+</svelte:head>

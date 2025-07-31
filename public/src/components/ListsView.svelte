@@ -74,3 +74,7 @@
     <button on:click={handleCreateList}>Create List</button>
   </div>
 </section>
+
+<svelte:head>
+  <title>Daily Routines</title>
+</svelte:head>
