@@ -249,7 +249,7 @@ export const updateTaskStatus = onCall(callableOptions, async (request) => {
     updates.previousRefreshTimestamp = taskData.refreshTimestamp;
     const now = Date.now();
     if (taskData.refreshTimestamp - now < taskData.refreshDuration / 2) {
-      updates.refreshTimestamp += taskData.refreshDuration;
+      updates.refreshTimestamp = taskData.refreshTimestamp + taskData.refreshDuration;
     }
   } else { // Marked as undone
     updates.refreshTimestamp = taskData.previousRefreshTimestamp;
